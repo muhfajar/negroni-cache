@@ -304,6 +304,7 @@ func (ch *Middleware) Freshness(res *Resource, r *CacheRequest) (time.Duration, 
 // InvalidCache force update cache when reaching cache expiry
 func (ch *Middleware) InvalidCache(rw http.ResponseWriter) bool {
 	cExpiry := ch.expiry
+	tExpiry := Clock().Add(-time.Duration(cExpiry) * time.Second).Unix()
 	str := rw.Header().Get("Proxy-Date")
 	t, err := time.Parse(http.TimeFormat, str)
 
@@ -312,7 +313,7 @@ func (ch *Middleware) InvalidCache(rw http.ResponseWriter) bool {
 		return false
 	}
 
-	if Clock().Add(-time.Duration(cExpiry)*time.Second).Unix() == t.Unix() {
+	if (tExpiry - t.Unix()) >= 0 {
 		return true
 	}
 

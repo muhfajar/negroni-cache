@@ -24,7 +24,7 @@ func setupServeHTTP(t *testing.T) (negroni.ResponseWriter, *http.Request) {
 }
 
 func TestMiddleware_ServeHTTP(t *testing.T) {
-	mw := NewMiddleware(NewMemoryCache())
+	mw := NewMiddleware(NewMemoryCache(), 10)
 
 	recNoCache, reqNoCache := setupServeHTTP(t)
 	mw.ServeHTTP(recNoCache, reqNoCache, func(w http.ResponseWriter, r *http.Request) {
