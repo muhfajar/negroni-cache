@@ -26,7 +26,8 @@ func main() {
     })
 
     n := negroni.Classic()
-    n.Use(cah.NewMiddleware(cah.NewMemoryCache()))
+    # set expire for 10second
+    n.Use(cah.NewMiddleware(cah.NewMemoryCache(), 10))
     n.UseHandler(mux)
     n.Run(":3000")
 }

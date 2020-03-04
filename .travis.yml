@@ -1,6 +1,6 @@
 language: go
-go_import_path: github.com/trumanw/negroni-cache
-sudo: fale
+go_import_path: github.com/muhfajar/negroni-cache
+sudo: false
 go:
 - 1.7.1
 - tip

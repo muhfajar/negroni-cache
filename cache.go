@@ -90,6 +90,14 @@ func (c *cache) vfsWrite(path string, r io.Reader) error {
 	return nil
 }
 
+func (c *cache) vfsRemove(path string) error {
+	err := c.fs.Remove(path)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // Retrieve the Status and Headers for a given key path
 func (c *cache) Header(key string) (Header, error) {
 	path := headerPrefix + formatPrefix + hashKey(key)
@@ -149,6 +157,20 @@ func (c *cache) storeHeader(code int, h http.Header, key string) error {
 	return nil
 }
 
+func (c *cache) removeBody(key string) error {
+	if err := c.vfsRemove(bodyPrefix + formatPrefix + hashKey(key)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *cache) removeHeader(key string) error {
+	if err := c.vfsRemove(headerPrefix + formatPrefix + hashKey(key)); err != nil {
+		return err
+	}
+	return nil
+}
+
 // Retrieve returns a cached Resource for the given key
 func (c *cache) Retrieve(key string) (*Resource, error) {
 	f, err := c.fs.Open(bodyPrefix + formatPrefix + hashKey(key))
@@ -176,9 +198,17 @@ func (c *cache) Retrieve(key string) (*Resource, error) {
 }
 
 func (c *cache) Invalidate(keys ...string) {
-	log.Printf("invalidating %q", keys)
 	for _, key := range keys {
-		c.stale[key] = Clock()
+		log.Printf("invalidating %q", key)
+		err := c.removeBody(key)
+		if err != nil {
+			log.Printf("invalidating %q failed", key)
+		}
+
+		err = c.removeHeader(key)
+		if err != nil {
+			log.Printf("invalidating %q failed", key)
+		}
 	}
 }
 

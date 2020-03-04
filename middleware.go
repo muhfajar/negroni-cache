@@ -49,12 +49,14 @@ type Middleware struct {
 	Shared    bool
 	validator *Validator
 	cache     Cache
+	expiry    int32
 }
 
 // NewMiddleware retrieves an instance of Cache handler
-func NewMiddleware(cache Cache) *Middleware {
+func NewMiddleware(cache Cache, expiry int32) *Middleware {
 	return &Middleware{
 		cache:  cache,
+		expiry: expiry,
 		Shared: false,
 	}
 }
@@ -131,11 +133,15 @@ func (ch *Middleware) ServeResource(res *Resource, rw http.ResponseWriter, req *
 		rw.Header().Add("Warning", `110 - "Response is Stale"`)
 	}
 
-	debugf("resource is %s old, updating age from %s",
-		age.String(), rw.Header().Get("Age"))
-
 	rw.Header().Set("Age", fmt.Sprintf("%.f", math.Floor(age.Seconds())))
 	rw.Header().Set("Via", res.Via())
+
+	debugf("resource is %s old, updating age with %s",
+		age.String(), rw.Header().Get("Age"))
+
+	if ch.InvalidCache(rw) {
+		ch.cache.Invalidate(ch.GenerateCacheKeys(res, req)...)
+	}
 
 	// hacky handler for non-ok statuses
 	if res.Status() != http.StatusOK {
@@ -200,24 +206,29 @@ func (ch *Middleware) CacheResource(res *Resource, r *CacheRequest) {
 	go func() {
 		defer Writes.Done()
 		t := Clock()
-		keys := []string{r.Key.String()}
-		headers := res.Header()
 
-		if ch.Shared {
-			res.RemovePrivateHeaders()
+		if err := ch.cache.Store(res, ch.GenerateCacheKeys(res, r)...); err != nil {
+			errorf("storing resources %#v failed with error: %s", ch.GenerateCacheKeys(res, r), err.Error())
 		}
 
-		// store a secondary vary version
-		if vary := headers.Get("Vary"); vary != "" {
-			keys = append(keys, r.Key.Vary(vary, r.Request).String())
-		}
-
-		if err := ch.cache.Store(res, keys...); err != nil {
-			errorf("storing resources %#v failed with error: %s", keys, err.Error())
-		}
-
-		debugf("stored resources %+v in %s", keys, Clock().Sub(t))
+		debugf("stored resources %+v in %s", ch.GenerateCacheKeys(res, r), Clock().Sub(t))
 	}()
+}
+
+func (ch *Middleware) GenerateCacheKeys(res *Resource, r *CacheRequest) []string {
+	keys := []string{r.Key.String()}
+	headers := res.Header()
+
+	if ch.Shared {
+		res.RemovePrivateHeaders()
+	}
+
+	// store a secondary vary version
+	if vary := headers.Get("Vary"); vary != "" {
+		keys = append(keys, r.Key.Vary(vary, r.Request).String())
+	}
+
+	return keys
 }
 
 // LookupInCached finds the best matching Resource for the
@@ -288,6 +299,24 @@ func (ch *Middleware) Freshness(res *Resource, r *CacheRequest) (time.Duration, 
 	}
 
 	return maxAge - age, nil
+}
+
+// InvalidCache force update cache when reaching cache expiry
+func (ch *Middleware) InvalidCache(rw http.ResponseWriter) bool {
+	cExpiry := ch.expiry
+	str := rw.Header().Get("Proxy-Date")
+	t, err := time.Parse(http.TimeFormat, str)
+
+	if err != nil {
+		errorf("Error parsing proxy-date: %s", err.Error())
+		return false
+	}
+
+	if Clock().Add(-time.Duration(cExpiry)*time.Second).Unix() == t.Unix() {
+		return true
+	}
+
+	return false
 }
 
 func (ch *Middleware) isCacheable(res *Resource, r *CacheRequest) bool {
